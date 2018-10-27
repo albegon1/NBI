@@ -41,7 +41,7 @@ for(i in 1:26){ # 26 years availables
 
 ### Setting up data
 
-To help cleaning lat-long null data and storing in dec_deg format, we use a clean-up function
+To remove lat-long null data and storing it in dec_deg format, we create the function below
 
 ```{r eval = FALSE}
 cleanup=function(dataframe){
@@ -70,7 +70,7 @@ if(max(dataframe$LAT_016)>1e+6){
 }
 ```
 
-We can now apply this clean-up function to all available data (co1992 to co2017), and save it as a Rdata file.
+We can now apply this clean-up function to all available data (co1992 to co2017), and save it as an Rdata file.
 
 ```{r eval = FALSE} 
 require(measurements) #eval = FALSE to save time knitting
@@ -83,6 +83,16 @@ save(file="Colorado NBI.RData",list=grep("co",ls(),value = TRUE))
 # next session / debugging RData can be re-loaded using
 # load("Colorado NBI.RData")
 ```
+
+A population of 8000 to 9000 bridges is inspected every 2 years. Up to 137 attributes are provided, including the sufficiency index, considered the most important variable.
+
+```{r}
+load("Colorado NBI.RData")
+dim(co1992)
+colnames(co1992)
+```
+
+
 
 ### Plotting data
 
@@ -101,7 +111,6 @@ par(mfrow=c(2,3))
 for(i in 1:26){
   plot_suff(paste("co",1991+i,sep=""))
 }
-
 ```
 
 ### Plotting with ggplot2
