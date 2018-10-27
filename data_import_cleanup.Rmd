@@ -1,0 +1,123 @@
+---
+title: "Data Import and clean-up"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Project Intro
+
+The project uses some data mining techniques with the Colorado Bridge Highway Inventory. The data has been taken from the Bridge Inspection Program of the Federal Highway Administration. For more details about the program see <https://www.fhwa.dot.gov/bridge/nbi.cfm>  
+
+### Downloading data
+
+26 years of inspection data is available (1992-2017). The code for dowloading data and extracting the one from Colorado is included below:
+
+```{r eval = FALSE}
+for(i in 1:26){ # 26 years availables
+  year=(1991+i) # From 1992
+  try(download.file(paste("https://www.fhwa.dot.gov/bridge/nbi/",year, 
+                      "del.zip",sep=""),paste(
+        "C:/Users/alexb/Google Drive/CVEN 6833 ADAT/zz Homeworks/Semester Project/NBI/",
+        year,"del.zip",sep=""),method = "libcurl"))                 # download zip
+  if(class(try(assign(paste("co",year,sep=""),read.delim2(unz(paste(
+    "C:/Users/alexb/Google Drive/CVEN 6833 ADAT/zz Homeworks/Semester Project/NBI/",
+    year,"del.zip",sep=""),                                        # extract Colorado
+    grep("08fluna",unzip(paste(                                    # yy 1992-2000 +-
+    "C:/Users/alexb/Google Drive/CVEN 6833 ADAT/zz Homeworks/Semester Project/NBI/",
+    year,"del.zip",sep=""),list=TRUE)[,1],value = TRUE)),header=TRUE,sep=","))))[1]==
+    "try-error"){
+    try(assign(paste("co",year,sep=""),read.delim2(unz(paste(
+      "C:/Users/alexb/Google Drive/CVEN 6833 ADAT/zz Homeworks/Semester Project/NBI/",
+      year,"del.zip",sep=""),                                      # extract Colorado
+      grep("CO",unzip(paste(                                       # yy 2000-2017 +-
+        "C:/Users/alexb/Google Drive/CVEN 6833 ADAT/zz Homeworks/Semester Project/NBI/",
+        year,"del.zip",sep=""),list=TRUE)[,1],value = TRUE)),header=TRUE,sep=",")))
+  }else{}
+}
+```
+
+### Setting up data
+
+To help cleaning lat-long null data and storing in dec_deg format, we use a clean-up function
+
+```{r eval = FALSE}
+cleanup=function(dataframe){
+dataframe$LAT_016<-ifelse(dataframe$LAT_016<=0,NA,dataframe$LAT_016) # NA to zero-neg values
+dataframe$LONG_017<-ifelse(dataframe$LONG_017<=0,NA,dataframe$LONG_017) # NA to zero-neg values
+dataframe=dataframe[complete.cases(dataframe$LAT_016)&complete.cases(dataframe$LONG_017),]
+if(max(dataframe$LAT_016)>1e+6){
+  for(i in 1:length(dataframe$LAT_016)){
+    hour=as.double(substr(as.character(dataframe$LAT_016[i]),1,2))
+    minute=as.double(substr(as.character(dataframe$LAT_016[i]),3,4))
+    sec=as.double(substr(as.character(dataframe$LAT_016[i]),5,8))/100 # CHECK: Data w/ 2 digits only
+    deg_min_sec=eval(paste(hour,minute,sec))
+    deg_dec=as.double(conv_unit(deg_min_sec,from = 'deg_min_sec', to = 'dec_deg'))
+    dataframe$LAT_016[i]=deg_dec
+  }
+  for(i in 1:length(dataframe$LONG_017)){
+    hour=as.double(substr(as.character(dataframe$LONG_017[i]),1,3))
+    minute=as.double(substr(as.character(dataframe$LONG_017[i]),4,5))
+    sec=as.double(substr(as.character(dataframe$LONG_017[i]),6,9))/100 #CHECK: Data w/ 2 digits only
+    deg_min_sec=eval(paste(hour,minute,sec))
+    deg_dec=as.double(conv_unit(deg_min_sec,from = 'deg_min_sec', to = 'dec_deg'))
+    dataframe$LONG_017[i]=-1*deg_dec
+  }
+}
+  return(dataframe)
+}
+```
+
+We can now apply this clean-up function to all available data (co1992 to co2017), and save it as a Rdata file.
+
+```{r eval = FALSE} 
+require(measurements) #eval = FALSE to save time knitting
+for(i in 1:26){ # 26 years
+  year=(1991+i) # From 1992
+  assign(paste("co",year,sep=""),cleanup(eval(parse(text = paste("co",year,sep="")))))
+  sprintf("year %s cleaned-up",year)
+}
+save(file="Colorado NBI.RData",list=grep("co",ls(),value = TRUE))
+# next session / debugging RData can be re-loaded using
+# load("Colorado NBI.RData")
+```
+
+### Plotting data
+
+We'll plot some features to check the data, e.g. the sufficiency rating map for a given year. The bigger the square, the lower the rating is. 
+
+```{r echo = FALSE}
+# plot sufficiency ratio function
+plot_suff=function(dataset){ #variable as character
+  data=eval(parse(text=dataset))
+  plot(data$LONG_017,data$LAT_016,xlim = c(-109,-102),ylim = c(37,41),
+       pch=".",cex=1/as.numeric(levels(data$SUFFICIENCY_RATING))[data$SUFFICIENCY_RATING]*25)
+  title(main = sprintf("Sufficiency rating year %s",substr(dataset,3,7)))
+}
+load("Colorado NBI.RData") #Has to be reloaded to be able to knit
+par(mfrow=c(2,3))
+for(i in 1:26){
+  plot_suff(paste("co",1991+i,sep=""))
+}
+
+```
+
+### Plotting with ggplot2
+```{r}
+require("tidyverse")
+require("RColorBrewer")
+ggplot_suff=function(dataset){ #rating fitted to parabola 0%=1, 50%=0.2, 100%=0
+  df=eval(parse(text=dataset))[c("LONG_017","LAT_016","SUFFICIENCY_RATING","YEAR_BUILT_027")]
+  df$SUFFICIENCY_RATING=as.numeric(levels(df$SUFFICIENCY_RATING))[df$SUFFICIENCY_RATING]
+  ggplot(df,aes(df$LONG_017,df$LAT_016))+scale_size_continuous(range =c(0.01,4))+
+  geom_point(aes(size=1.2e-4*df$SUFFICIENCY_RATING^2-2.2e-2*df$SUFFICIENCY_RATING+1,
+  color=as.numeric(substr(dataset,3,7))-df$YEAR_BUILT_027))+scale_color_gradientn(
+  colours =rev(brewer.pal(11,"RdYlBu"))) +coord_fixed(xlim = c(-109, -102), ylim = c(37, 41))+labs(title=sprintf("Sufficiency rating year %s",substr(dataset,3,7)),colour = "Age",size="S.R (recip)",x="Long",y="Lat")+theme(legend.position="bottom",legend.box = "horizontal") }
+load("Colorado NBI.RData") #Has to be reloaded to be able to knit
+gg=vector('numeric')
+ for(i in 0:3){
+     print(ggplot_suff(paste("co",1992+8*i,sep="")))
+}
+```
